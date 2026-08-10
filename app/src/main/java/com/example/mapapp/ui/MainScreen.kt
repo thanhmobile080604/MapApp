@@ -183,6 +183,8 @@ fun MainScreen(modifier: Modifier = Modifier, viewModel: MainViewModel = viewMod
         bottomBar = {
             TrackingControls(
                 isTracking = isTracking,
+                latitude = location.latitude,
+                longitude = location.longitude,
                 speedKmh = location.speedKmh,
                 speedLimitKmh = config.speedLimitKmh,
                 drowsinessEnabled = config.drowsinessAlertEnabled,
@@ -396,6 +398,8 @@ private fun SearchPanel(
 @Composable
 private fun TrackingControls(
     isTracking: Boolean,
+    latitude: Double,
+    longitude: Double,
     speedKmh: Float,
     speedLimitKmh: Int,
     drowsinessEnabled: Boolean,
@@ -415,10 +419,10 @@ private fun TrackingControls(
             verticalAlignment = Alignment.CenterVertically
         ) {
             Button(onTrackingClick) { Text(if (isTracking) "Stop tracking" else "Start tracking") }
-            Text(
-                "Speed: ${"%.1f".format(speedKmh)} km/h"
-            )
         }
+        Text("Lat: ${"%.6f".format(latitude)}")
+        Text("Lon: ${"%.6f".format(longitude)}")
+        Text("Speed: ${"%.1f".format(speedKmh.coerceAtLeast(0f))} km/h")
         Text("Speed limit: $speedLimitKmh km/h")
         Slider(speedLimitKmh.toFloat(), onSpeedLimitChange, valueRange = 0f..200f, steps = 19)
         Row(verticalAlignment = Alignment.CenterVertically) {
