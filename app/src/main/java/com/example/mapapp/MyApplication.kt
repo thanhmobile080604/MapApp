@@ -2,7 +2,6 @@ package com.example.mapapp
 
 import android.app.Application
 import com.example.mapapp.data.LocationRepository
-import com.example.mapapp.util.scheduleDrowsinessWorker
 import org.osmdroid.config.Configuration
 
 class MyApplication : Application() {
@@ -12,6 +11,5 @@ class MyApplication : Application() {
         Configuration.getInstance().load(this, getSharedPreferences("osmdroid", 0))
 
         LocationRepository.init(this)
-        scheduleDrowsinessWorker(this)
     }
 }

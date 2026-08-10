@@ -9,6 +9,8 @@ import androidx.lifecycle.viewModelScope
 import com.example.mapapp.service.LocationForegroundService
 import com.example.mapapp.data.LocationRepository
 import com.example.mapapp.data.model.UserConfig
+import com.example.mapapp.util.cancelDrowsinessWorker
+import com.example.mapapp.util.scheduleDrowsinessWorker
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.stateIn
@@ -34,6 +36,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         } else {
             getApplication<Application>().startService(intent)
         }
+        scheduleDrowsinessWorker(getApplication(), configFlow.value.drowsinessAlertEnabled)
     }
 
     fun stopTracking() {
@@ -41,6 +44,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         intent.action = LocationForegroundService.ACTION_STOP
         getApplication<Application>().stopService(intent)
         LocationRepository.setTracking(false)
+        cancelDrowsinessWorker(getApplication())
     }
 
     fun setSpeedLimit(speedLimitKmh: Float) {
@@ -49,6 +53,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun setDrowsinessAlert(enabled: Boolean) {
         LocationRepository.setDrowsinessAlert(enabled)
+        if (LocationRepository.isTrackingFlow.value) {
+            if (enabled) scheduleDrowsinessWorker(getApplication(), true)
+            else cancelDrowsinessWorker(getApplication())
+        }
     }
 
     /** Fetches a position for the map without starting persistent trip tracking. */

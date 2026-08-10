@@ -111,6 +111,8 @@ fun MainScreen(modifier: Modifier = Modifier, viewModel: MainViewModel = viewMod
     var hasCenteredOnUser by remember { mutableStateOf(false) }
     var mapView by remember { mutableStateOf<MapView?>(null) }
     var searchQuery by remember { mutableStateOf("") }
+    var showSpeedAlertDialog by remember { mutableStateOf(false) }
+    var hasShownSpeedAlert by remember { mutableStateOf(false) }
     var results by remember { mutableStateOf(emptyList<OsmSearchResult>()) }
     var isSearching by remember { mutableStateOf(false) }
     var destination by remember { mutableStateOf<OsmSearchResult?>(null) }
@@ -140,11 +142,39 @@ fun MainScreen(modifier: Modifier = Modifier, viewModel: MainViewModel = viewMod
                 viewModel.refreshCurrentLocation()
             } else Toast.makeText(context, "Location permission denied", Toast.LENGTH_LONG).show()
         }
+    val overSpeedLimit = isTracking && location.hasFix && location.speedKmh > config.speedLimitKmh.toFloat()
+
+    LaunchedEffect(overSpeedLimit, isTracking, config.speedLimitKmh) {
+        if (overSpeedLimit && !hasShownSpeedAlert) {
+            showSpeedAlertDialog = true
+            hasShownSpeedAlert = true
+        } else if (!overSpeedLimit) {
+            hasShownSpeedAlert = false
+        }
+    }
+
     LaunchedEffect(Unit) {
         if (hasLocationPermission()) {
             checkLocationEnabled(context)
             viewModel.refreshCurrentLocation()
         } else permissionLauncher.launch(locationPermissions)
+    }
+
+    if (showSpeedAlertDialog) {
+        AlertDialog(
+            onDismissRequest = {
+                showSpeedAlertDialog = false
+                hasShownSpeedAlert = false
+            },
+            title = { Text("Speed limit exceeded") },
+            text = { Text("You are driving faster than the selected speed limit.") },
+            confirmButton = {
+                TextButton(onClick = {
+                    showSpeedAlertDialog = false
+                    hasShownSpeedAlert = false
+                }) { Text("OK") }
+            }
+        )
     }
 
     Scaffold(

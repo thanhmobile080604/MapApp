@@ -7,7 +7,12 @@ import androidx.work.WorkManager
 import com.example.mapapp.worker.DrowsinessWorker
 import java.util.concurrent.TimeUnit
 
-fun scheduleDrowsinessWorker(context: Context) {
+fun scheduleDrowsinessWorker(context: Context, enabled: Boolean) {
+    if (!enabled) {
+        cancelDrowsinessWorker(context)
+        return
+    }
+
     val workRequest = PeriodicWorkRequestBuilder<DrowsinessWorker>(
         15, TimeUnit.MINUTES
     ).build()
@@ -17,4 +22,8 @@ fun scheduleDrowsinessWorker(context: Context) {
         ExistingPeriodicWorkPolicy.KEEP,
         workRequest
     )
+}
+
+fun cancelDrowsinessWorker(context: Context) {
+    WorkManager.getInstance(context).cancelUniqueWork("DrowsinessAlertWork")
 }

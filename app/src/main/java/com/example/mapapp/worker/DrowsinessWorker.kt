@@ -35,6 +35,8 @@ class DrowsinessWorker(appContext: Context, params: WorkerParameters) : Coroutin
 
     override suspend fun doWork(): Result {
         createChannel()
+        if (!LocationRepository.isTrackingFlow.value) return Result.success()
+
         val config = LocationRepository.configFlow.first()
         if (!config.drowsinessAlertEnabled) return Result.success()
 
