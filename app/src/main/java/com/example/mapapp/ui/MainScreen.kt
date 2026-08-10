@@ -52,17 +52,26 @@ fun MainScreen(modifier: Modifier = Modifier, viewModel: MainViewModel = viewMod
     val config by viewModel.configFlow.collectAsState()
     val isTracking by viewModel.isTrackingFlow.collectAsState()
     val isLocationEnabled by viewModel.isLocationEnabledFlow.collectAsState()
+    val isSimulationActive by viewModel.isSimulationActiveFlow.collectAsState()
     val searchQuery by viewModel.searchQuery.collectAsState()
     val searchResults by viewModel.searchResults.collectAsState()
     val isSearching by viewModel.isSearching.collectAsState()
     val destination by viewModel.destination.collectAsState()
     val route by viewModel.route.collectAsState()
 
+    var showSpeedAlertDialog by remember { mutableStateOf(false) }
+    var currentAlertSpeed by remember { mutableStateOf(0f) }
+
+    LaunchedEffect(Unit) {
+        viewModel.speedAlertEvent.collect { speed ->
+            currentAlertSpeed = speed
+            showSpeedAlertDialog = true
+        }
+    }
+
     val hasLocation = location.hasFix
     var hasCenteredOnUser by remember { mutableStateOf(false) }
     var mapView by remember { mutableStateOf<MapView?>(null) }
-    var showSpeedAlertDialog by remember { mutableStateOf(false) }
-    var hasShownSpeedAlert by remember { mutableStateOf(false) }
 
     val permissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
@@ -84,29 +93,20 @@ fun MainScreen(modifier: Modifier = Modifier, viewModel: MainViewModel = viewMod
         }
     }
 
-    //Speed Control
-    val overSpeedLimit = isTracking && location.hasFix && location.speedKmh > config.speedLimitKmh.toFloat()
-    LaunchedEffect(overSpeedLimit, isTracking, config.speedLimitKmh) {
-        if (overSpeedLimit && !hasShownSpeedAlert) {
-            showSpeedAlertDialog = true
-            hasShownSpeedAlert = true
-        } else if (!overSpeedLimit) {
-            hasShownSpeedAlert = false
-        }
-    }
+    //Speed Control removed - handled by ViewModel/Service
 
     if (showSpeedAlertDialog) {
         AlertDialog(
             onDismissRequest = {
                 showSpeedAlertDialog = false
-                hasShownSpeedAlert = false
+                viewModel.onSpeedAlertDismissed()
             },
             title = { Text("Speed limit exceeded") },
-            text = { Text("You are driving faster than the selected speed limit.") },
+            text = { Text("You are driving faster than the selected speed limit (${"%.1f".format(currentAlertSpeed)} km/h).") },
             confirmButton = {
                 TextButton(onClick = {
                     showSpeedAlertDialog = false
-                    hasShownSpeedAlert = false
+                    viewModel.onSpeedAlertDismissed()
                 }) { Text("OK") }
             }
         )
@@ -133,7 +133,10 @@ fun MainScreen(modifier: Modifier = Modifier, viewModel: MainViewModel = viewMod
                     }
                 },
                 onSpeedLimitChange = viewModel::setSpeedLimit,
-                onDrowsinessChange = viewModel::setDrowsinessAlert
+                onDrowsinessChange = viewModel::setDrowsinessAlert,
+                isSimulationActive = isSimulationActive,
+                onTestSpeedAlert = viewModel::triggerTestSpeedAlert,
+                onStopTest = viewModel::stopSpeedTest
             )
         }
     ) { padding ->
@@ -344,7 +347,10 @@ private fun TrackingControls(
     drowsinessEnabled: Boolean,
     onTrackingClick: () -> Unit,
     onSpeedLimitChange: (Float) -> Unit,
-    onDrowsinessChange: (Boolean) -> Unit
+    onDrowsinessChange: (Boolean) -> Unit,
+    isSimulationActive: Boolean,
+    onTestSpeedAlert: () -> Unit,
+    onStopTest: () -> Unit
 ) {
     Column(
         Modifier
@@ -358,10 +364,26 @@ private fun TrackingControls(
             verticalAlignment = Alignment.CenterVertically
         ) {
             Button(onTrackingClick) { Text(if (isTracking) "Stop tracking" else "Start tracking") }
+            if (isTracking) {
+                if (!isSimulationActive) {
+                    OutlinedButton(onClick = onTestSpeedAlert) {
+                        Text("Start Test")
+                    }
+                } else {
+                    Button(
+                        onClick = onStopTest,
+                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
+                    ) {
+                        Text("Stop Test")
+                    }
+                }
+            }
         }
-        Text("Lat: ${"%.6f".format(latitude)}")
-        Text("Lon: ${"%.6f".format(longitude)}")
-        Text("Speed: ${"%.1f".format(speedKmh.coerceAtLeast(0f))} km/h")
+        if (isTracking) {
+            Text("Lat: ${"%.6f".format(latitude)}")
+            Text("Lon: ${"%.6f".format(longitude)}")
+            Text("Speed: ${"%.1f".format(speedKmh.coerceAtLeast(0f))} km/h")
+        }
         Text("Speed limit: $speedLimitKmh km/h")
         Slider(speedLimitKmh.toFloat(), onSpeedLimitChange, valueRange = 0f..200f, steps = 19)
         Row(verticalAlignment = Alignment.CenterVertically) {

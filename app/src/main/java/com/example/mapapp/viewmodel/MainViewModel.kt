@@ -2,20 +2,21 @@ package com.example.mapapp.viewmodel
 
 import android.app.Application
 import android.content.Intent
-import android.content.pm.PackageManager
-import androidx.core.content.ContextCompat
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.mapapp.data.LocationData
 import com.example.mapapp.data.model.UserConfig
 import com.example.mapapp.service.LocationForegroundService
+import com.example.mapapp.util.LocationHelper
 import com.google.android.gms.location.LocationServices
 import com.google.android.gms.location.Priority
 import com.google.android.gms.tasks.CancellationTokenSource
-import com.example.mapapp.util.LocationHelper
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -44,6 +45,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val _isLocationEnabledFlow = MutableStateFlow(true)
     val isLocationEnabledFlow: StateFlow<Boolean> = _isLocationEnabledFlow.asStateFlow()
 
+    private val _isSimulationActiveFlow = MutableStateFlow(false)
+    val isSimulationActiveFlow: StateFlow<Boolean> = _isSimulationActiveFlow.asStateFlow()
+
     // Search and Routing State
     private val _searchQuery = MutableStateFlow("")
     val searchQuery = _searchQuery.asStateFlow()
@@ -60,6 +64,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val _route = MutableStateFlow<List<GeoPoint>>(emptyList())
     val route = _route.asStateFlow()
 
+    private val _speedAlertEvent = MutableSharedFlow<Float>()
+    val speedAlertEvent = _speedAlertEvent.asSharedFlow()
+
     fun onServiceConnected(service: LocationForegroundService) {
         this.locationService = service
         viewModelScope.launch {
@@ -67,6 +74,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             launch { service.isTrackingFlow.collect { _isTrackingFlow.value = it } }
             launch { service.configFlow.collect { _configFlow.value = it } }
             launch { service.isLocationEnabledFlow.collect { _isLocationEnabledFlow.value = it } }
+            launch { service.isSimulationActiveFlow.collect { _isSimulationActiveFlow.value = it } }
+            launch {
+                service.speedAlertFlow.collect {
+                    _speedAlertEvent.emit(it)
+                }
+            }
         }
     }
 
@@ -85,10 +98,23 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun stopTracking() {
-        val intent = Intent(getApplication(), LocationForegroundService::class.java)
-        intent.action = LocationForegroundService.ACTION_STOP
-        getApplication<Application>().stopService(intent)
+        val intent = Intent(getApplication(), LocationForegroundService::class.java).apply {
+            action = LocationForegroundService.ACTION_STOP
+        }
+        getApplication<Application>().startService(intent)
         LocationHelper.cancelDrowsinessWorker(getApplication())
+    }
+
+    fun triggerTestSpeedAlert() {
+        locationService?.startSpeedSimulation()
+    }
+
+    fun stopSpeedTest() {
+        locationService?.stopSpeedSimulation()
+    }
+
+    fun onSpeedAlertDismissed() {
+        locationService?.dismissSpeedAlert()
     }
 
     fun setSpeedLimit(speedLimitKmh: Float) {

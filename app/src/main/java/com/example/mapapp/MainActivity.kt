@@ -5,7 +5,6 @@ import android.content.Context
 import android.content.Intent
 import android.content.ServiceConnection
 import android.os.*
-import android.widget.Toast
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.viewModels
@@ -26,7 +25,6 @@ class MainActivity : AppCompatActivity() {
         override fun onServiceConnected(name: ComponentName?, service: IBinder?) {
             val binder = service as LocationForegroundService.LocalBinder
             val locationService = binder.getService()
-            locationService.setMessenger(messenger)
             viewModel.onServiceConnected(locationService)
         }
 
@@ -34,15 +32,6 @@ class MainActivity : AppCompatActivity() {
             viewModel.onServiceDisconnected()
         }
     }
-
-    private val handler = object : Handler(Looper.getMainLooper()) {
-        override fun handleMessage(msg: Message) {
-            if (msg.what == LocationForegroundService.MSG_HEARTBEAT) {
-                Toast.makeText(this@MainActivity, "Service Heartbeat Received", Toast.LENGTH_SHORT).show()
-            }
-        }
-    }
-    private val messenger = Messenger(handler)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)

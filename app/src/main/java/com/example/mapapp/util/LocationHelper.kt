@@ -65,7 +65,9 @@ object LocationHelper {
 
         val workRequest = PeriodicWorkRequestBuilder<DrowsinessWorker>(
             15, TimeUnit.MINUTES
-        ).build()
+        )
+            .setInitialDelay(15, TimeUnit.MINUTES)
+            .build()
 
         WorkManager.getInstance(context).enqueueUniquePeriodicWork(
             "DrowsinessAlertWork",
