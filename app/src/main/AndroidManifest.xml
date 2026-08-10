@@ -33,13 +33,6 @@
             android:name=".service.LocationForegroundService"
             android:exported="false"
             android:foregroundServiceType="location" />
-        <receiver
-            android:name=".receiver.GpsProviderChangedReceiver"
-            android:exported="false">
-            <intent-filter>
-                <action android:name="android.location.PROVIDERS_CHANGED" />
-            </intent-filter>
-        </receiver>
     </application>
 
 </manifest>

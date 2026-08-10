@@ -1,9 +1,6 @@
 package com.example.mapapp.ui
 
-import android.Manifest
-import android.content.pm.PackageManager
 import android.graphics.Color
-import android.os.Build
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -25,23 +22,15 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
-import androidx.core.content.ContextCompat
 import androidx.lifecycle.viewmodel.compose.viewModel
-import com.example.mapapp.util.checkLocationEnabled
+import com.example.mapapp.util.LocationHelper
 import com.example.mapapp.viewmodel.MainViewModel
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
-import org.json.JSONArray
-import org.json.JSONObject
+import com.example.mapapp.viewmodel.OsmSearchResult
 import org.osmdroid.tileprovider.tilesource.XYTileSource
 import org.osmdroid.util.GeoPoint
 import org.osmdroid.views.MapView
 import org.osmdroid.views.overlay.Marker
 import org.osmdroid.views.overlay.Polyline
-import java.net.HttpURLConnection
-import java.net.URL
-import java.net.URLEncoder
 
 private val cartoVoyagerTiles = XYTileSource(
     "CartoDBVoyager", 0, 19, 256, ".png", arrayOf(
@@ -55,95 +44,48 @@ private val cartoVoyagerTiles = XYTileSource(
 private const val USER_MARKER_ID = "user_location"
 private const val DESTINATION_MARKER_ID = "destination_location"
 
-private data class OsmSearchResult(val displayName: String, val lat: Double, val lon: Double)
-
-private suspend fun searchLocations(query: String): List<OsmSearchResult> =
-    withContext(Dispatchers.IO) {
-        if (query.isBlank()) return@withContext emptyList()
-        runCatching {
-            val encoded = URLEncoder.encode(query.trim(), "UTF-8")
-            val connection =
-                URL("https://nominatim.openstreetmap.org/search?q=$encoded&format=json&limit=5")
-                    .openConnection() as HttpURLConnection
-            connection.setRequestProperty("User-Agent", "NaviMapViewer/2.0")
-            connection.connectTimeout = 5_000
-            connection.readTimeout = 5_000
-            val results = JSONArray(connection.inputStream.bufferedReader().use { it.readText() })
-            List(results.length()) { index ->
-                val item = results.getJSONObject(index)
-                OsmSearchResult(
-                    item.optString("display_name"),
-                    item.getDouble("lat"),
-                    item.getDouble("lon")
-                )
-            }
-        }.getOrDefault(emptyList())
-    }
-
-private suspend fun fetchDrivingRoute(start: GeoPoint, end: GeoPoint): List<GeoPoint> =
-    withContext(Dispatchers.IO) {
-        runCatching {
-            val address =
-                "https://router.project-osrm.org/route/v1/driving/${start.longitude},${start.latitude}${end.longitude},${end.latitude}?overview=full&geometries=geojson"
-            val connection = URL(address).openConnection() as HttpURLConnection
-            connection.setRequestProperty("User-Agent", "NaviMapViewer/2.0")
-            connection.connectTimeout = 6_000
-            connection.readTimeout = 6_000
-            val coordinates =
-                JSONObject(connection.inputStream.bufferedReader().use { it.readText() })
-                    .getJSONArray("routes").getJSONObject(0).getJSONObject("geometry")
-                    .getJSONArray("coordinates")
-            List(coordinates.length()) { index ->
-                coordinates.getJSONArray(index).let { GeoPoint(it.getDouble(1), it.getDouble(0)) }
-            }
-        }.getOrElse { listOf(start, end) }
-    }
-
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MainScreen(modifier: Modifier = Modifier, viewModel: MainViewModel = viewModel()) {
     val context = LocalContext.current
-    val scope = rememberCoroutineScope()
     val location by viewModel.locationFlow.collectAsState()
     val config by viewModel.configFlow.collectAsState()
     val isTracking by viewModel.isTrackingFlow.collectAsState()
+    val isLocationEnabled by viewModel.isLocationEnabledFlow.collectAsState()
+    val searchQuery by viewModel.searchQuery.collectAsState()
+    val searchResults by viewModel.searchResults.collectAsState()
+    val isSearching by viewModel.isSearching.collectAsState()
+    val destination by viewModel.destination.collectAsState()
+    val route by viewModel.route.collectAsState()
+
     val hasLocation = location.hasFix
     var hasCenteredOnUser by remember { mutableStateOf(false) }
     var mapView by remember { mutableStateOf<MapView?>(null) }
-    var searchQuery by remember { mutableStateOf("") }
     var showSpeedAlertDialog by remember { mutableStateOf(false) }
     var hasShownSpeedAlert by remember { mutableStateOf(false) }
-    var results by remember { mutableStateOf(emptyList<OsmSearchResult>()) }
-    var isSearching by remember { mutableStateOf(false) }
-    var destination by remember { mutableStateOf<OsmSearchResult?>(null) }
-    var route by remember { mutableStateOf(emptyList<GeoPoint>()) }
 
-    val locationPermissions = remember {
-        buildList {
-            add(Manifest.permission.ACCESS_FINE_LOCATION)
-            add(Manifest.permission.ACCESS_COARSE_LOCATION)
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) add(Manifest.permission.POST_NOTIFICATIONS)
-        }.toTypedArray()
+    val permissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestMultiplePermissions()
+    ) { results ->
+        if (results.values.all { it }) {
+            LocationHelper.checkLocationEnabled(context)
+            viewModel.refreshCurrentLocation()
+        } else {
+            Toast.makeText(context, "Location permission denied", Toast.LENGTH_LONG).show()
+        }
     }
 
-    fun hasLocationPermission() = ContextCompat.checkSelfPermission(
-        context,
-        Manifest.permission.ACCESS_FINE_LOCATION
-    ) == PackageManager.PERMISSION_GRANTED ||
-            ContextCompat.checkSelfPermission(
-                context,
-                Manifest.permission.ACCESS_COARSE_LOCATION
-            ) == PackageManager.PERMISSION_GRANTED
-
-    val permissionLauncher =
-        rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) {
-            if (hasLocationPermission()) {
-                checkLocationEnabled(context)
-                viewModel.refreshCurrentLocation()
-            } else Toast.makeText(context, "Location permission denied", Toast.LENGTH_LONG).show()
+    LaunchedEffect(Unit) {
+        if (!LocationHelper.hasLocationPermission(context)) {
+            permissionLauncher.launch(LocationHelper.getRequiredPermissions())
+        } else {
+            LocationHelper.checkLocationEnabled(context)
+            viewModel.refreshCurrentLocation()
         }
-    val overSpeedLimit = isTracking && location.hasFix && location.speedKmh > config.speedLimitKmh.toFloat()
+    }
 
+    //Speed Control
+    val overSpeedLimit = isTracking && location.hasFix && location.speedKmh > config.speedLimitKmh.toFloat()
     LaunchedEffect(overSpeedLimit, isTracking, config.speedLimitKmh) {
         if (overSpeedLimit && !hasShownSpeedAlert) {
             showSpeedAlertDialog = true
@@ -151,13 +93,6 @@ fun MainScreen(modifier: Modifier = Modifier, viewModel: MainViewModel = viewMod
         } else if (!overSpeedLimit) {
             hasShownSpeedAlert = false
         }
-    }
-
-    LaunchedEffect(Unit) {
-        if (hasLocationPermission()) {
-            checkLocationEnabled(context)
-            viewModel.refreshCurrentLocation()
-        } else permissionLauncher.launch(locationPermissions)
     }
 
     if (showSpeedAlertDialog) {
@@ -191,9 +126,11 @@ fun MainScreen(modifier: Modifier = Modifier, viewModel: MainViewModel = viewMod
                 onTrackingClick = {
                     if (isTracking) {
                         viewModel.stopTracking()
-                    } else if (hasLocationPermission()) {
+                    } else if (LocationHelper.hasLocationPermission(context)) {
                         viewModel.startTracking()
-                    } else permissionLauncher.launch(locationPermissions)
+                    } else {
+                        permissionLauncher.launch(LocationHelper.getRequiredPermissions())
+                    }
                 },
                 onSpeedLimitChange = viewModel::setSpeedLimit,
                 onDrowsinessChange = viewModel::setDrowsinessAlert
@@ -205,81 +142,57 @@ fun MainScreen(modifier: Modifier = Modifier, viewModel: MainViewModel = viewMod
                 .fillMaxSize()
                 .padding(padding)
         ) {
-            AndroidView(
-                modifier = Modifier.fillMaxSize(),
-                factory = { mapContext ->
-                    MapView(mapContext).apply {
-                        setTileSource(cartoVoyagerTiles)
-                        setMultiTouchControls(true)
-                        controller.setZoom(3.0)
-                        controller.setCenter(GeoPoint(0.0, 0.0))
-                        mapView = this
-                    }
-                },
-                update = { map ->
-                    val userPoint =
-                        location.takeIf { hasLocation }?.let {
-                            GeoPoint(it.latitude, it.longitude)
+            Column(Modifier.fillMaxSize()) {
+                AndroidView(
+                    modifier = Modifier.weight(1f),
+                    factory = { mapContext ->
+                        MapView(mapContext).apply {
+                            setTileSource(cartoVoyagerTiles)
+                            setMultiTouchControls(true)
+                            controller.setZoom(3.0)
+                            controller.setCenter(GeoPoint(0.0, 0.0))
+                            mapView = this
                         }
-                    map.updateMarkers(userPoint, destination, route)
-                    if (userPoint != null && !hasCenteredOnUser) {
-                        map.controller.setCenter(userPoint)
-                        map.controller.setZoom(16.0)
-                        hasCenteredOnUser = true
+                    },
+                    update = { map ->
+                        val userPoint = location.takeIf { hasLocation }?.let { GeoPoint(it.latitude, it.longitude) }
+                        map.updateMarkers(userPoint, destination, route)
+                        if (userPoint != null && !hasCenteredOnUser) {
+                            map.controller.setCenter(userPoint)
+                            map.controller.setZoom(16.0)
+                            hasCenteredOnUser = true
+                        }
                     }
-                    map.invalidate()
+                )
+                if (!isLocationEnabled) {
+                    LocationWarningBanner(onEnableClick = {
+                        LocationHelper.checkLocationEnabled(context)
+                    })
                 }
-            )
+            }
             SearchPanel(
                 searchQuery,
-                results,
+                searchResults,
                 isSearching,
-                onQueryChange = {
-                    searchQuery = it
-                    if (it.isBlank()) results = emptyList()
-                },
-                onSearch = {
-                    isSearching = true
-                    scope.launch {
-                        results = searchLocations(searchQuery)
-                        isSearching = false
-                    }
-                },
+                onQueryChange = viewModel::updateSearchQuery,
+                onSearch = viewModel::performSearch,
                 onResult = { selected ->
-                    destination = selected
-                    results = emptyList()
-                    searchQuery = selected.displayName
-                    val end = GeoPoint(selected.lat, selected.lon)
-                    mapView?.controller?.animateTo(end)
-                    if (hasLocation) scope.launch {
-                        route =
-                            fetchDrivingRoute(GeoPoint(location.latitude, location.longitude), end)
-                    }
-                    else Toast.makeText(context, "Waiting for current location", Toast.LENGTH_SHORT)
-                        .show()
-                })
+                    viewModel.selectDestination(selected)
+                    mapView?.controller?.animateTo(GeoPoint(selected.lat, selected.lon))
+                }
+            )
             FloatingActionButton(
                 onClick = {
-                    if (hasLocation) {
-                        mapView?.controller?.animateTo(
-                            GeoPoint(
-                                location.latitude,
-                                location.longitude
-                            )
-                        )
+                    val userLocation = location.takeIf { hasLocation }?.let { GeoPoint(it.latitude, it.longitude) }
+                    if (userLocation != null) {
+                        mapView?.controller?.animateTo(userLocation)
                         mapView?.controller?.setZoom(16.0)
                     } else {
                         viewModel.refreshCurrentLocation()
-                        Toast.makeText(
-                            context,
-                            "Getting current location…",
-                            Toast.LENGTH_SHORT
-                        ).show()
+                        Toast.makeText(context, "Getting current location…", Toast.LENGTH_SHORT).show()
                     }
                 },
-                modifier = Modifier
-                    .align(Alignment.BottomEnd)
-                    .padding(16.dp)
+                modifier = Modifier.align(Alignment.BottomEnd).padding(16.dp)
             ) { Icon(Icons.Default.MyLocation, "Current location") }
         }
     }
@@ -326,6 +239,32 @@ private fun MapView.updateMarkers(
         outlinePaint.strokeWidth = 10f
         setPoints(route)
     })
+}
+
+@Composable
+private fun LocationWarningBanner(onEnableClick: () -> Unit) {
+    Surface(
+        color = MaterialTheme.colorScheme.errorContainer,
+        contentColor = MaterialTheme.colorScheme.onErrorContainer,
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Row(
+            Modifier
+                .padding(12.dp)
+                .fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Text(
+                "Location services are disabled",
+                style = MaterialTheme.typography.bodyMedium,
+                modifier = Modifier.weight(1f)
+            )
+            TextButton(onClick = onEnableClick) {
+                Text("ENABLE")
+            }
+        }
+    }
 }
 
 @Composable

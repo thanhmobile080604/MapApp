@@ -12,7 +12,7 @@ import com.example.mapapp.MainActivity
 import com.example.mapapp.R
 import com.example.mapapp.data.LocationRepository
 import com.example.mapapp.data.model.AlertType
-import kotlinx.coroutines.flow.first
+import com.example.mapapp.service.LocationForegroundService
 
 class DrowsinessWorker(appContext: Context, params: WorkerParameters) : CoroutineWorker(appContext, params) {
 
@@ -35,10 +35,8 @@ class DrowsinessWorker(appContext: Context, params: WorkerParameters) : Coroutin
 
     override suspend fun doWork(): Result {
         createChannel()
-        if (!LocationRepository.isTrackingFlow.value) return Result.success()
-
-        val config = LocationRepository.configFlow.first()
-        if (!config.drowsinessAlertEnabled) return Result.success()
+        if (!LocationForegroundService.isTracking) return Result.success()
+        if (!LocationForegroundService.drowsinessEnabled) return Result.success()
 
         val intent = Intent(applicationContext, MainActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
