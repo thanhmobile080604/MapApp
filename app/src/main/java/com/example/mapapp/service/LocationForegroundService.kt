@@ -43,15 +43,6 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 
 class LocationForegroundService : Service() {
-
-    inner class LocalBinder : Binder() {
-        fun getService(): LocationForegroundService = this@LocationForegroundService
-        fun getMessenger(): Messenger = serviceMessenger
-    }
-
-    private val binder = LocalBinder()
-    private val serviceScope = CoroutineScope(Dispatchers.Main + SupervisorJob())
-
     companion object {
         const val CHANNEL_ID = "location_service_channel"
         const val ALERT_CHANNEL_ID = "alert_service_channel"
@@ -94,6 +85,14 @@ class LocationForegroundService : Service() {
         var drowsinessEnabled: Boolean = false
             private set
     }
+
+    inner class LocalBinder : Binder() {
+        fun getService(): LocationForegroundService = this@LocationForegroundService
+        fun getMessenger(): Messenger = serviceMessenger
+    }
+
+    private val binder = LocalBinder()
+    private val serviceScope = CoroutineScope(Dispatchers.Main + SupervisorJob())
 
     private lateinit var fusedClient: FusedLocationProviderClient
     private lateinit var locationCallback: LocationCallback
