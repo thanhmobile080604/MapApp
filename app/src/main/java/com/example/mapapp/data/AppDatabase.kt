@@ -2,17 +2,16 @@ package com.example.mapapp.data
 
 import androidx.room.Database
 import androidx.room.RoomDatabase
-import com.example.mapapp.data.dao.TripHistoryDao
-import com.example.mapapp.data.dao.UserConfigDao
-import com.example.mapapp.data.model.TripHistory
-import com.example.mapapp.data.model.UserConfig
+import androidx.room.TypeConverters
+import com.example.mapapp.data.dao.AlertHistoryDao
+import com.example.mapapp.data.model.AlertHistory
 
 @Database(
-    entities = [TripHistory::class, UserConfig::class],
-    version = 1,
+    entities = [AlertHistory::class],
+    version = 2,
     exportSchema = false
 )
+@TypeConverters(AlertTypeConverters::class)
 abstract class AppDatabase : RoomDatabase() {
-    abstract fun tripHistoryDao(): TripHistoryDao
-    abstract fun userConfigDao(): UserConfigDao
+    abstract fun alertHistoryDao(): AlertHistoryDao
 }

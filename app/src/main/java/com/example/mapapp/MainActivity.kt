@@ -5,11 +5,8 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.appcompat.app.AppCompatActivity
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.padding
-import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
 import androidx.compose.ui.Modifier
-import androidx.core.view.ViewCompat
-import androidx.core.view.WindowInsetsCompat
 import com.example.mapapp.ui.MainScreen
 import com.example.mapapp.ui.theme.ThemeTemplate
 
@@ -19,8 +16,8 @@ class MainActivity : AppCompatActivity() {
         enableEdgeToEdge()
         setContent {
             ThemeTemplate {
-                Scaffold(modifier = Modifier.fillMaxSize()) { innerPadding ->
-                    MainScreen(modifier = Modifier.padding(innerPadding))
+                Surface(modifier = Modifier.fillMaxSize()) {
+                    MainScreen()
                 }
             }
         }

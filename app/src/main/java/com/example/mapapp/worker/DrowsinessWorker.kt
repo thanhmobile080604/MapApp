@@ -11,12 +11,9 @@ import androidx.work.WorkerParameters
 import com.example.mapapp.MainActivity
 import com.example.mapapp.R
 import com.example.mapapp.data.LocationRepository
+import com.example.mapapp.data.model.AlertType
 import kotlinx.coroutines.flow.first
 
-/**
- * Periodic worker that triggers a drowsiness alert when the user has enabled the feature.
- * It shows a notification with an "Awake" action button.
- */
 class DrowsinessWorker(appContext: Context, params: WorkerParameters) : CoroutineWorker(appContext, params) {
 
     companion object {
@@ -38,11 +35,9 @@ class DrowsinessWorker(appContext: Context, params: WorkerParameters) : Coroutin
 
     override suspend fun doWork(): Result {
         createChannel()
-        // Check if alert is enabled in repository config
         val config = LocationRepository.configFlow.first()
         if (!config.drowsinessAlertEnabled) return Result.success()
 
-        // Build intent that opens MainActivity when user taps notification
         val intent = Intent(applicationContext, MainActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
         }
@@ -53,7 +48,6 @@ class DrowsinessWorker(appContext: Context, params: WorkerParameters) : Coroutin
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
-        // Action to dismiss – simply opens the app (could add more logic later)
         val awakeIntent = Intent(applicationContext, MainActivity::class.java).apply {
             action = "ACTION_AWAKE"
         }
@@ -65,7 +59,7 @@ class DrowsinessWorker(appContext: Context, params: WorkerParameters) : Coroutin
         )
 
         val notification = NotificationCompat.Builder(applicationContext, CHANNEL_ID)
-            .setSmallIcon(R.drawable.ic_launcher_foreground) // using existing launcher icon
+            .setSmallIcon(R.drawable.ic_launcher_foreground)
             .setContentTitle("Stay Awake!")
             .setContentText("Potential drowsiness detected. Tap to confirm you are awake.")
             .setContentIntent(pending)
@@ -75,6 +69,7 @@ class DrowsinessWorker(appContext: Context, params: WorkerParameters) : Coroutin
 
         val manager = applicationContext.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         manager.notify(NOTIFICATION_ID, notification)
+        LocationRepository.recordAlert(AlertType.DROWSINESS)
         return Result.success()
     }
 }

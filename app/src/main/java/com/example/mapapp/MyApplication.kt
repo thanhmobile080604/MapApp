@@ -3,16 +3,15 @@ package com.example.mapapp
 import android.app.Application
 import com.example.mapapp.data.LocationRepository
 import com.example.mapapp.util.scheduleDrowsinessWorker
+import org.osmdroid.config.Configuration
 
-/**
- * Application class used to initialise singletons and schedule background workers.
- */
 class MyApplication : Application() {
     override fun onCreate() {
         super.onCreate()
-        // Initialise the Room database and repository
+        Configuration.getInstance().userAgentValue = "NaviMapViewer/2.0 (Android; NavigationApp)"
+        Configuration.getInstance().load(this, getSharedPreferences("osmdroid", 0))
+
         LocationRepository.init(this)
-        // Schedule the drowsiness worker (periodic background task)
         scheduleDrowsinessWorker(this)
     }
 }

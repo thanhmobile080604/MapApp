@@ -10,18 +10,13 @@ import android.content.Intent
 import android.location.Location
 import android.os.Build
 import android.os.IBinder
-import androidx.annotation.RequiresPermission
 import androidx.core.app.NotificationCompat
 import com.example.mapapp.R
 import com.example.mapapp.data.LocationRepository
-import com.example.mapapp.data.model.TripHistory
+import com.example.mapapp.data.model.AlertType
 import com.google.android.gms.location.*
 import com.google.android.gms.location.FusedLocationProviderClient
 
-/**
- * Foreground service that receives high‑accuracy location updates and pushes them to
- * [LocationRepository]. It shows a persistent notification with a STOP action.
- */
 class LocationForegroundService : Service() {
 
     companion object {
@@ -32,6 +27,7 @@ class LocationForegroundService : Service() {
 
     private lateinit var fusedClient: FusedLocationProviderClient
     private lateinit var locationCallback: LocationCallback
+    private var wasOverSpeedLimit = false
 
     override fun onCreate() {
         super.onCreate()
@@ -61,7 +57,6 @@ class LocationForegroundService : Service() {
     }
 
     private fun startForegroundService() {
-        // Intent to stop the service when user taps the action button
         val stopIntent = Intent(this, LocationForegroundService::class.java).apply {
             action = ACTION_STOP
         }
@@ -75,16 +70,34 @@ class LocationForegroundService : Service() {
         val notification = NotificationCompat.Builder(this, CHANNEL_ID)
             .setContentTitle("Location tracking active")
             .setContentText("Tap STOP to end tracking")
-            .setSmallIcon(R.drawable.ic_launcher_foreground) // ensure drawable exists
+            .setSmallIcon(R.drawable.ic_launcher_foreground)
             .addAction(android.R.drawable.ic_media_pause, "STOP", stopPending)
             .setOngoing(true)
             .build()
 
-        startForeground(NOTIFICATION_ID, notification)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            startForeground(
+                NOTIFICATION_ID,
+                notification,
+                android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION
+            )
+        } else {
+            startForeground(NOTIFICATION_ID, notification)
+        }
     }
 
-    @RequiresPermission(allOf = [Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION])
     private fun startLocationUpdates() {
+        if (androidx.core.content.ContextCompat.checkSelfPermission(
+                this,
+                Manifest.permission.ACCESS_FINE_LOCATION
+            ) != android.content.pm.PackageManager.PERMISSION_GRANTED &&
+            androidx.core.content.ContextCompat.checkSelfPermission(
+                this,
+                Manifest.permission.ACCESS_COARSE_LOCATION
+            ) != android.content.pm.PackageManager.PERMISSION_GRANTED
+        ) {
+            return
+        }
         val request = LocationRequest.Builder(Priority.PRIORITY_HIGH_ACCURACY, 5_000L)
             .setMinUpdateIntervalMillis(2_000L)
             .setMaxUpdateDelayMillis(10_000L)
@@ -98,30 +111,28 @@ class LocationForegroundService : Service() {
 
     private fun handleLocation(loc: Location) {
         val speedKmh = if (loc.speed >= 0) (loc.speed * 3.6f) else 0f
-        // Update live location flow
         LocationRepository.updateLocation(loc.latitude, loc.longitude, speedKmh)
-        // Persist point to DB as a TripHistory entry
-        val trip = TripHistory(
-            latitude = loc.latitude,
-            longitude = loc.longitude,
-            speedKmh = speedKmh,
-            maxSpeedKmh = null // can be computed later if needed
-        )
-        LocationRepository.insertTrip(trip)
+        val isOverSpeedLimit = speedKmh > LocationRepository.configFlow.value.speedLimitKmh
+        if (isOverSpeedLimit && !wasOverSpeedLimit) {
+            LocationRepository.recordAlert(AlertType.SPEED)
+        }
+        wasOverSpeedLimit = isOverSpeedLimit
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         if (intent?.action == ACTION_STOP) {
+            LocationRepository.setTracking(false)
             stopSelf()
             return START_NOT_STICKY
         }
-        // Start service if not already foreground
         startForegroundService()
+        LocationRepository.setTracking(true)
         startLocationUpdates()
         return START_STICKY
     }
 
     override fun onDestroy() {
+        LocationRepository.setTracking(false)
         super.onDestroy()
         stopLocationUpdates()
         stopForeground(true)

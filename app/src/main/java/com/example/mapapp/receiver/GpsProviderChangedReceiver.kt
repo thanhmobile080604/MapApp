@@ -6,10 +6,6 @@ import android.content.Intent
 import android.location.LocationManager
 import android.widget.Toast
 
-/**
- * Receives system broadcasts about GPS provider changes.
- * Shows a toast when GPS is disabled.
- */
 class GpsProviderChangedReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         if (intent.action != LocationManager.PROVIDERS_CHANGED_ACTION) return
