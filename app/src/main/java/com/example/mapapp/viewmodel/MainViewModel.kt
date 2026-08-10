@@ -2,36 +2,50 @@ package com.example.mapapp.viewmodel
 
 import android.app.Application
 import android.content.Intent
+import android.os.*
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.mapapp.data.LocationData
 import com.example.mapapp.data.model.UserConfig
 import com.example.mapapp.service.LocationForegroundService
+import com.example.mapapp.service.LocationForegroundService.Companion.KEY_DROWSY
+import com.example.mapapp.service.LocationForegroundService.Companion.KEY_FIX
+import com.example.mapapp.service.LocationForegroundService.Companion.KEY_LAT
+import com.example.mapapp.service.LocationForegroundService.Companion.KEY_LIMIT
+import com.example.mapapp.service.LocationForegroundService.Companion.KEY_LON
+import com.example.mapapp.service.LocationForegroundService.Companion.KEY_SPEED
+import com.example.mapapp.service.LocationForegroundService.Companion.MSG_CMD_DISMISS_ALERT
+import com.example.mapapp.service.LocationForegroundService.Companion.MSG_CMD_SET_DROWSY_ALERT
+import com.example.mapapp.service.LocationForegroundService.Companion.MSG_CMD_SET_SPEED_LIMIT
+import com.example.mapapp.service.LocationForegroundService.Companion.MSG_CMD_START_SIMULATION
+import com.example.mapapp.service.LocationForegroundService.Companion.MSG_CMD_START_TRACKING
+import com.example.mapapp.service.LocationForegroundService.Companion.MSG_CMD_STOP_SIMULATION
+import com.example.mapapp.service.LocationForegroundService.Companion.MSG_CMD_STOP_TRACKING
+import com.example.mapapp.service.LocationForegroundService.Companion.MSG_CONFIG_UPDATE
+import com.example.mapapp.service.LocationForegroundService.Companion.MSG_LOCATION_ENABLED
+import com.example.mapapp.service.LocationForegroundService.Companion.MSG_LOCATION_UPDATE
+import com.example.mapapp.service.LocationForegroundService.Companion.MSG_REGISTER_CLIENT
+import com.example.mapapp.service.LocationForegroundService.Companion.MSG_SIMULATION_STATUS
+import com.example.mapapp.service.LocationForegroundService.Companion.MSG_SPEED_ALERT
+import com.example.mapapp.service.LocationForegroundService.Companion.MSG_TRACKING_STATUS
+import com.example.mapapp.service.LocationForegroundService.Companion.MSG_UNREGISTER_CLIENT
 import com.example.mapapp.util.LocationHelper
+import com.example.mapapp.util.LocationHelper.fetchDrivingRoute
+import com.example.mapapp.util.LocationHelper.searchLocations
 import com.google.android.gms.location.LocationServices
 import com.google.android.gms.location.Priority
 import com.google.android.gms.tasks.CancellationTokenSource
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.flow.MutableSharedFlow
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asSharedFlow
-import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
-import org.json.JSONArray
-import org.json.JSONObject
 import org.osmdroid.util.GeoPoint
-import java.net.HttpURLConnection
-import java.net.URL
-import java.net.URLEncoder
 
 data class OsmSearchResult(val displayName: String, val lat: Double, val lon: Double)
 
 class MainViewModel(application: Application) : AndroidViewModel(application) {
 
-    private var locationService: LocationForegroundService? = null
+    private var serviceMessenger: Messenger? = null
 
+    // UI State
     private val _locationFlow = MutableStateFlow(LocationData())
     val locationFlow: StateFlow<LocationData> = _locationFlow.asStateFlow()
 
@@ -47,7 +61,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val _isSimulationActiveFlow = MutableStateFlow(false)
     val isSimulationActiveFlow: StateFlow<Boolean> = _isSimulationActiveFlow.asStateFlow()
 
-    // Search and Routing State
     private val _searchQuery = MutableStateFlow("")
     val searchQuery = _searchQuery.asStateFlow()
 
@@ -66,85 +79,96 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val _speedAlertEvent = MutableSharedFlow<Float>()
     val speedAlertEvent = _speedAlertEvent.asSharedFlow()
 
-    fun onServiceConnected(service: LocationForegroundService) {
-        this.locationService = service
-        viewModelScope.launch {
-            launch {
-                service.locationFlow.collect {
-                    _locationFlow.value = it
+    // Incoming Handler
+    private val incomingHandler = object : Handler(Looper.getMainLooper()) {
+        override fun handleMessage(msg: Message) {
+            when (msg.what) {
+                MSG_LOCATION_UPDATE -> {
+                    val lat = msg.data.getDouble(KEY_LAT)
+                    val lon = msg.data.getDouble(KEY_LON)
+                    val speed = msg.data.getFloat(KEY_SPEED)
+                    val fix = msg.data.getBoolean(KEY_FIX)
+                    _locationFlow.value = LocationData(lat, lon, speed, fix)
                 }
-            }
-            launch {
-                service.isTrackingFlow.collect {
-                    _isTrackingFlow.value = it
+                MSG_TRACKING_STATUS -> _isTrackingFlow.value = msg.arg1 == 1
+                MSG_CONFIG_UPDATE -> {
+                    val limit = msg.data.getInt(KEY_LIMIT)
+                    val drowsy = msg.data.getBoolean(KEY_DROWSY)
+                    _configFlow.value = UserConfig(limit, drowsy)
                 }
-            }
-            launch {
-                service.configFlow.collect {
-                    _configFlow.value = it
+                MSG_LOCATION_ENABLED -> _isLocationEnabledFlow.value = msg.arg1 == 1
+                MSG_SIMULATION_STATUS -> _isSimulationActiveFlow.value = msg.arg1 == 1
+                MSG_SPEED_ALERT -> {
+                    val speed = msg.obj as Float
+                    viewModelScope.launch { _speedAlertEvent.emit(speed) }
                 }
+                else -> super.handleMessage(msg)
             }
-            launch {
-                service.isLocationEnabledFlow.collect {
-                    _isLocationEnabledFlow.value = it
-                }
-            }
-            launch {
-                service.isSimulationActiveFlow.collect {
-                    _isSimulationActiveFlow.value = it
-                }
-            }
-            launch {
-                service.speedAlertFlow.collect {
-                    _speedAlertEvent.emit(it)
-                }
-            }
+        }
+    }
+
+    private val clientMessenger = Messenger(incomingHandler)
+
+    fun onServiceConnected(messenger: Messenger) {
+        this.serviceMessenger = messenger
+        try {
+            val msg = Message.obtain(null, MSG_REGISTER_CLIENT)
+            msg.replyTo = clientMessenger
+            messenger.send(msg)
+        } catch (e: RemoteException) {
+            e.printStackTrace()
         }
     }
 
     fun onServiceDisconnected() {
-        this.locationService = null
+        this.serviceMessenger = null
+    }
+
+    private fun sendCommand(what: Int, arg1: Int = 0, obj: Any? = null) {
+        try {
+            val msg = Message.obtain(null, what)
+            msg.arg1 = arg1
+            msg.obj = obj
+            serviceMessenger?.send(msg)
+        } catch (e: RemoteException) {
+            e.printStackTrace()
+        }
     }
 
     fun startTracking() {
         val intent = Intent(getApplication(), LocationForegroundService::class.java)
-        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             getApplication<Application>().startForegroundService(intent)
         } else {
             getApplication<Application>().startService(intent)
         }
-        LocationHelper.scheduleDrowsinessWorker(
-            getApplication(),
-            configFlow.value.drowsinessAlertEnabled
-        )
+        sendCommand(MSG_CMD_START_TRACKING)
+        LocationHelper.scheduleDrowsinessWorker(getApplication(), configFlow.value.drowsinessAlertEnabled)
     }
 
     fun stopTracking() {
-        val intent = Intent(getApplication(), LocationForegroundService::class.java).apply {
-            action = LocationForegroundService.ACTION_STOP
-        }
-        getApplication<Application>().startService(intent)
+        sendCommand(MSG_CMD_STOP_TRACKING)
         LocationHelper.cancelDrowsinessWorker(getApplication())
     }
 
     fun triggerTestSpeedAlert() {
-        locationService?.startSpeedSimulation()
+        sendCommand(MSG_CMD_START_SIMULATION)
     }
 
     fun stopSpeedTest() {
-        locationService?.stopSpeedSimulation()
+        sendCommand(MSG_CMD_STOP_SIMULATION)
     }
 
     fun onSpeedAlertDismissed() {
-        locationService?.dismissSpeedAlert()
+        sendCommand(MSG_CMD_DISMISS_ALERT)
     }
 
     fun setSpeedLimit(speedLimitKmh: Float) {
-        locationService?.setSpeedLimit(speedLimitKmh.toInt())
+        sendCommand(MSG_CMD_SET_SPEED_LIMIT, speedLimitKmh.toInt())
     }
 
     fun setDrowsinessAlert(enabled: Boolean) {
-        locationService?.setDrowsinessEnabled(enabled)
+        sendCommand(MSG_CMD_SET_DROWSY_ALERT, if (enabled) 1 else 0)
         if (isTrackingFlow.value) {
             if (enabled) LocationHelper.scheduleDrowsinessWorker(getApplication(), true)
             else LocationHelper.cancelDrowsinessWorker(getApplication())
@@ -185,50 +209,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    private suspend fun searchLocations(query: String): List<OsmSearchResult> =
-        withContext(Dispatchers.IO) {
-            runCatching {
-                val encoded = URLEncoder.encode(query.trim(), "UTF-8")
-                val connection =
-                    URL("https://nominatim.openstreetmap.org/search?q=$encoded&format=json&limit=5")
-                        .openConnection() as HttpURLConnection
-                connection.setRequestProperty("User-Agent", "NaviMapViewer/2.0")
-                connection.connectTimeout = 5_000
-                connection.readTimeout = 5_000
-                val results =
-                    JSONArray(connection.inputStream.bufferedReader().use { it.readText() })
-                List(results.length()) { index ->
-                    val item = results.getJSONObject(index)
-                    OsmSearchResult(
-                        item.optString("display_name"),
-                        item.getDouble("lat"),
-                        item.getDouble("lon")
-                    )
-                }
-            }.getOrDefault(emptyList())
-        }
-
-    private suspend fun fetchDrivingRoute(start: GeoPoint, end: GeoPoint): List<GeoPoint> =
-        withContext(Dispatchers.IO) {
-            runCatching {
-                val address =
-                    "https://router.project-osrm.org/route/v1/driving/${start.longitude},${start.latitude};${end.longitude},${end.latitude}?overview=full&geometries=geojson"
-                val connection = URL(address).openConnection() as HttpURLConnection
-                connection.setRequestProperty("User-Agent", "NaviMapViewer/2.0")
-                connection.connectTimeout = 6_000
-                connection.readTimeout = 6_000
-                val coordinates =
-                    JSONObject(connection.inputStream.bufferedReader().use { it.readText() })
-                        .getJSONArray("routes").getJSONObject(0).getJSONObject("geometry")
-                        .getJSONArray("coordinates")
-                List(coordinates.length()) { index ->
-                    coordinates.getJSONArray(index)
-                        .let { GeoPoint(it.getDouble(1), it.getDouble(0)) }
-                }
-            }.getOrElse { listOf(start, end) }
-        }
-
-    /** Fetches a position for the map without starting persistent trip tracking. */
     fun refreshCurrentLocation() {
         val app = getApplication<Application>()
         if (!LocationHelper.hasLocationPermission(app)) return
@@ -238,7 +218,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             .addOnSuccessListener { location ->
                 if (location != null) updateLocation(location)
                 else LocationServices.getFusedLocationProviderClient(app).lastLocation
-                    .addOnSuccessListener { lastLocation -> lastLocation?.let(::updateLocation) }
+                    .addOnSuccessListener { lastLocation ->
+                        lastLocation?.let(::updateLocation)
+                    }
             }
     }
 
@@ -249,5 +231,16 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             location.speed.coerceAtLeast(0f) * 3.6f,
             true
         )
+    }
+
+    override fun onCleared() {
+        try {
+            val msg = Message.obtain(null, MSG_UNREGISTER_CLIENT)
+            msg.replyTo = clientMessenger
+            serviceMessenger?.send(msg)
+        } catch (e: RemoteException) {
+            e.printStackTrace()
+        }
+        super.onCleared()
     }
 }

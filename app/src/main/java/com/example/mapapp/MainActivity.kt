@@ -24,8 +24,8 @@ class MainActivity : AppCompatActivity() {
     private val serviceConnection = object : ServiceConnection {
         override fun onServiceConnected(name: ComponentName?, service: IBinder?) {
             val binder = service as LocationForegroundService.LocalBinder
-            val locationService = binder.getService()
-            viewModel.onServiceConnected(locationService)
+            val messenger = binder.getMessenger()
+            viewModel.onServiceConnected(messenger)
         }
 
         override fun onServiceDisconnected(name: ComponentName?) {

@@ -1,9 +1,13 @@
 package com.example.mapapp.ui
 
+import android.content.ComponentName
+import android.content.ServiceConnection
 import android.graphics.Color
+import android.os.IBinder
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.activity.viewModels
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -23,6 +27,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.example.mapapp.service.LocationForegroundService
 import com.example.mapapp.util.LocationHelper
 import com.example.mapapp.viewmodel.MainViewModel
 import com.example.mapapp.viewmodel.OsmSearchResult
@@ -31,6 +36,7 @@ import org.osmdroid.util.GeoPoint
 import org.osmdroid.views.MapView
 import org.osmdroid.views.overlay.Marker
 import org.osmdroid.views.overlay.Polyline
+import kotlin.getValue
 
 private val cartoVoyagerTiles = XYTileSource(
     "CartoDBVoyager", 0, 19, 256, ".png", arrayOf(

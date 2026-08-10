@@ -11,7 +11,15 @@ import android.content.Intent
 import android.content.IntentFilter
 import android.location.Location
 import android.location.LocationManager
-import android.os.*
+import android.os.Binder
+import android.os.Build
+import android.os.Bundle
+import android.os.Handler
+import android.os.IBinder
+import android.os.Looper
+import android.os.Message
+import android.os.Messenger
+import android.os.RemoteException
 import androidx.core.app.NotificationCompat
 import com.example.mapapp.MainActivity
 import com.example.mapapp.R
@@ -19,18 +27,26 @@ import com.example.mapapp.data.LocationData
 import com.example.mapapp.data.LocationRepository
 import com.example.mapapp.data.model.AlertType
 import com.example.mapapp.data.model.UserConfig
-import com.google.android.gms.location.*
-import kotlinx.coroutines.*
-import kotlinx.coroutines.flow.MutableSharedFlow
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.SharedFlow
-import kotlinx.coroutines.flow.StateFlow
-import java.util.Random
+import com.google.android.gms.location.FusedLocationProviderClient
+import com.google.android.gms.location.LocationCallback
+import com.google.android.gms.location.LocationRequest
+import com.google.android.gms.location.LocationResult
+import com.google.android.gms.location.LocationServices
+import com.google.android.gms.location.Priority
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
 
 class LocationForegroundService : Service() {
 
     inner class LocalBinder : Binder() {
         fun getService(): LocationForegroundService = this@LocationForegroundService
+        fun getMessenger(): Messenger = serviceMessenger
     }
 
     private val binder = LocalBinder()
@@ -42,6 +58,33 @@ class LocationForegroundService : Service() {
         const val NOTIFICATION_ID = 1001
         const val ALERT_NOTIFICATION_ID = 1002
         const val ACTION_STOP = "com.example.mapapp.ACTION_STOP"
+
+        // Message types
+        const val MSG_REGISTER_CLIENT = 1
+        const val MSG_UNREGISTER_CLIENT = 2
+        const val MSG_LOCATION_UPDATE = 3
+        const val MSG_TRACKING_STATUS = 4
+        const val MSG_CONFIG_UPDATE = 5
+        const val MSG_SPEED_ALERT = 6
+        const val MSG_SIMULATION_STATUS = 7
+        const val MSG_LOCATION_ENABLED = 8
+
+        // Commands
+        const val MSG_CMD_START_TRACKING = 101
+        const val MSG_CMD_STOP_TRACKING = 102
+        const val MSG_CMD_START_SIMULATION = 103
+        const val MSG_CMD_STOP_SIMULATION = 104
+        const val MSG_CMD_DISMISS_ALERT = 105
+        const val MSG_CMD_SET_SPEED_LIMIT = 106
+        const val MSG_CMD_SET_DROWSY_ALERT = 107
+
+        // Bundle Keys
+        const val KEY_LAT = "lat"
+        const val KEY_LON = "lon"
+        const val KEY_SPEED = "speed"
+        const val KEY_FIX = "fix"
+        const val KEY_LIMIT = "limit"
+        const val KEY_DROWSY = "drowsy"
 
         @Volatile
         var isTracking: Boolean = false
@@ -58,24 +101,47 @@ class LocationForegroundService : Service() {
     private var isSpeedAlertActive = false
     private var simulationJob: Job? = null
 
-    // Moved from Repository
-    private val _locationFlow = MutableStateFlow(LocationData())
-    val locationFlow: StateFlow<LocationData> = _locationFlow
+    // Internal State
+    private var currentLocation = LocationData()
+    private var userConfig = UserConfig()
+    private var isLocationEnabled = true
+    private var isSimulationActive = false
 
-    private val _isTrackingFlow = MutableStateFlow(false)
-    val isTrackingFlow: StateFlow<Boolean> = _isTrackingFlow
+    private val clientMessengers = mutableListOf<Messenger>()
 
-    private val _configFlow = MutableStateFlow(UserConfig())
-    val configFlow: StateFlow<UserConfig> = _configFlow
+    private val incomingHandler = object : Handler(Looper.getMainLooper()) {
+        override fun handleMessage(msg: Message) {
+            when (msg.what) {
+                MSG_REGISTER_CLIENT -> {
+                    clientMessengers.add(msg.replyTo)
+                    // Push current state to new client
+                    sendLocationUpdate(currentLocation)
+                    sendTrackingStatus(isTracking)
+                    sendConfigUpdate(userConfig)
+                    sendLocationEnabled(isLocationEnabled)
+                    sendSimulationStatus(isSimulationActive)
+                }
+                MSG_UNREGISTER_CLIENT -> clientMessengers.remove(msg.replyTo)
+                
+                MSG_CMD_START_TRACKING -> startTrackingMode()
+                MSG_CMD_STOP_TRACKING -> stopTrackingMode()
+                MSG_CMD_START_SIMULATION -> startSpeedSimulation()
+                MSG_CMD_STOP_SIMULATION -> stopSpeedSimulation()
+                MSG_CMD_DISMISS_ALERT -> dismissSpeedAlert()
+                MSG_CMD_SET_SPEED_LIMIT -> {
+                    val limit = msg.arg1
+                    setSpeedLimit(limit)
+                }
+                MSG_CMD_SET_DROWSY_ALERT -> {
+                    val enabled = msg.arg1 == 1
+                    setDrowsinessEnabled(enabled)
+                }
+                else -> super.handleMessage(msg)
+            }
+        }
+    }
 
-    private val _isLocationEnabledFlow = MutableStateFlow(true)
-    val isLocationEnabledFlow: StateFlow<Boolean> = _isLocationEnabledFlow
-
-    private val _speedAlertFlow = MutableSharedFlow<Float>()
-    val speedAlertFlow: SharedFlow<Float> = _speedAlertFlow
-
-    private val _isSimulationActiveFlow = MutableStateFlow(false)
-    val isSimulationActiveFlow: StateFlow<Boolean> = _isSimulationActiveFlow
+    private val serviceMessenger = Messenger(incomingHandler)
 
     private val gpsReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
@@ -108,7 +174,8 @@ class LocationForegroundService : Service() {
         } else {
             androidx.core.location.LocationManagerCompat.isLocationEnabled(lm)
         }
-        _isLocationEnabledFlow.value = isEnabled
+        isLocationEnabled = isEnabled
+        sendLocationEnabled(isEnabled)
     }
 
     private fun createChannels() {
@@ -135,30 +202,28 @@ class LocationForegroundService : Service() {
 
     private fun handleLocation(loc: Location) {
         val rawSpeedKmh = if (loc.speed >= 0) (loc.speed * 3.6f) else 0f
-        // Filter out GPS jitter noise when stationary
         val speedKmh = if (rawSpeedKmh < 1.5f) 0f else rawSpeedKmh
 
         processSpeedUpdate(loc.latitude, loc.longitude, speedKmh)
 
-        if (_isTrackingFlow.value) {
+        if (isTracking) {
             updateForegroundNotification(loc.latitude, loc.longitude, speedKmh)
         }
     }
 
     private fun processSpeedUpdate(lat: Double, lon: Double, speedKmh: Float) {
-        _locationFlow.value = LocationData(lat, lon, speedKmh, true)
+        currentLocation = LocationData(lat, lon, speedKmh, true)
+        sendLocationUpdate(currentLocation)
 
-        if (_isTrackingFlow.value) {
-            val limit = _configFlow.value.speedLimitKmh
+        if (isTracking) {
+            val limit = userConfig.speedLimitKmh
             val isOverSpeedLimit = speedKmh > limit
             
             if (isOverSpeedLimit && !isSpeedAlertActive) {
                 isSpeedAlertActive = true
                 LocationRepository.recordAlert(AlertType.SPEED)
                 showSpeedAlertNotification(speedKmh, limit)
-                serviceScope.launch {
-                    _speedAlertFlow.emit(speedKmh)
-                }
+                sendSpeedAlert(speedKmh)
             }
             wasOverSpeedLimit = isOverSpeedLimit
         }
@@ -224,9 +289,24 @@ class LocationForegroundService : Service() {
         fusedClient.removeLocationUpdates(locationCallback)
     }
 
+    private fun startTrackingMode() {
+        if (isTracking) return
+        startForegroundService()
+        isTracking = true
+        sendTrackingStatus(true)
+    }
+
+    private fun stopTrackingMode() {
+        if (!isTracking) return
+        isTracking = false
+        stopForeground(STOP_FOREGROUND_REMOVE)
+        sendTrackingStatus(false)
+    }
+
     fun startSpeedSimulation() {
-        if (_isSimulationActiveFlow.value) return
-        _isSimulationActiveFlow.value = true
+        if (isSimulationActive) return
+        isSimulationActive = true
+        sendSimulationStatus(true)
         setSpeedLimit(10)
         
         simulationJob?.cancel()
@@ -234,10 +314,9 @@ class LocationForegroundService : Service() {
             val random = java.util.Random()
             while (isActive) {
                 val simulatedSpeed = random.nextFloat() * 20f // 0 to 20 km/h
-                val currentLoc = _locationFlow.value
-                processSpeedUpdate(currentLoc.latitude, currentLoc.longitude, simulatedSpeed)
-                if (_isTrackingFlow.value) {
-                    updateForegroundNotification(currentLoc.latitude, currentLoc.longitude, simulatedSpeed)
+                processSpeedUpdate(currentLocation.latitude, currentLocation.longitude, simulatedSpeed)
+                if (isTracking) {
+                    updateForegroundNotification(currentLocation.latitude, currentLocation.longitude, simulatedSpeed)
                 }
                 delay(3000)
             }
@@ -245,7 +324,8 @@ class LocationForegroundService : Service() {
     }
 
     fun stopSpeedSimulation() {
-        _isSimulationActiveFlow.value = false
+        isSimulationActive = false
+        sendSimulationStatus(false)
         simulationJob?.cancel()
         isSpeedAlertActive = false
     }
@@ -268,22 +348,14 @@ class LocationForegroundService : Service() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         if (intent?.action == ACTION_STOP) {
-            _isTrackingFlow.value = false
-            isTracking = false
-            stopForeground(STOP_FOREGROUND_REMOVE)
-            // Note: Service remains running for updates if bound
+            stopTrackingMode()
             return START_NOT_STICKY
         }
-        startForegroundService()
-        _isTrackingFlow.value = true
-        isTracking = true
-        // Location updates already started in onCreate
         return START_STICKY
     }
 
     override fun onDestroy() {
-        _isTrackingFlow.value = false
-        isTracking = false
+        stopTrackingMode()
         stopLocationUpdates()
         serviceScope.cancel()
         try {
@@ -291,18 +363,80 @@ class LocationForegroundService : Service() {
         } catch (_: Exception) {
             // Already unregistered
         }
-        stopForeground(STOP_FOREGROUND_REMOVE)
         super.onDestroy()
     }
 
-    override fun onBind(intent: Intent?): IBinder = binder
+    override fun onBind(intent: Intent?): IBinder {
+        return binder
+    }
 
     fun setSpeedLimit(limit: Int) {
-        _configFlow.value = _configFlow.value.copy(speedLimitKmh = limit)
+        userConfig = userConfig.copy(speedLimitKmh = limit)
+        sendConfigUpdate(userConfig)
     }
 
     fun setDrowsinessEnabled(enabled: Boolean) {
-        _configFlow.value = _configFlow.value.copy(drowsinessAlertEnabled = enabled)
+        userConfig = userConfig.copy(drowsinessAlertEnabled = enabled)
         drowsinessEnabled = enabled
+        sendConfigUpdate(userConfig)
+    }
+
+    // --- Message Sending Helpers ---
+
+    private fun sendLocationUpdate(data: LocationData) {
+        val msg = Message.obtain(null, MSG_LOCATION_UPDATE)
+        msg.data = Bundle().apply { 
+            putDouble(KEY_LAT, data.latitude)
+            putDouble(KEY_LON, data.longitude)
+            putFloat(KEY_SPEED, data.speedKmh)
+            putBoolean(KEY_FIX, data.hasFix)
+        }
+        broadcastMessage(msg)
+    }
+
+    private fun sendTrackingStatus(status: Boolean) {
+        val msg = Message.obtain(null, MSG_TRACKING_STATUS)
+        msg.arg1 = if (status) 1 else 0
+        broadcastMessage(msg)
+    }
+
+    private fun sendConfigUpdate(config: UserConfig) {
+        val msg = Message.obtain(null, MSG_CONFIG_UPDATE)
+        msg.data = Bundle().apply { 
+            putInt(KEY_LIMIT, config.speedLimitKmh)
+            putBoolean(KEY_DROWSY, config.drowsinessAlertEnabled)
+        }
+        broadcastMessage(msg)
+    }
+
+    private fun sendSpeedAlert(speed: Float) {
+        val msg = Message.obtain(null, MSG_SPEED_ALERT)
+        msg.obj = speed
+        broadcastMessage(msg)
+    }
+
+    private fun sendSimulationStatus(status: Boolean) {
+        val msg = Message.obtain(null, MSG_SIMULATION_STATUS)
+        msg.arg1 = if (status) 1 else 0
+        broadcastMessage(msg)
+    }
+
+    private fun sendLocationEnabled(status: Boolean) {
+        val msg = Message.obtain(null, MSG_LOCATION_ENABLED)
+        msg.arg1 = if (status) 1 else 0
+        broadcastMessage(msg)
+    }
+
+    private fun broadcastMessage(msg: Message) {
+        val iterator = clientMessengers.iterator()
+        while (iterator.hasNext()) {
+            val client = iterator.next()
+            try {
+                val copy = Message.obtain(msg)
+                client.send(copy)
+            } catch (e: RemoteException) {
+                iterator.remove()
+            }
+        }
     }
 }

@@ -1,6 +1,6 @@
 plugins {
-    id("org.jetbrains.kotlin.plugin.compose") version "2.0.0"
     alias(libs.plugins.android.application)
+    id("org.jetbrains.kotlin.plugin.compose") version "2.0.0"
     alias(libs.plugins.android.kotlin.builtin.support)
     alias(libs.plugins.android.legacy.kapt)
 }
