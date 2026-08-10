@@ -1,4 +1,4 @@
-package com.example.mapapp.data.model
+package com.example.mapapp.model
 
 data class UserConfig(
     val speedLimitKmh: Int = 80,

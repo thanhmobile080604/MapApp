@@ -1,10 +1,10 @@
-package com.example.mapapp.data
+package com.example.mapapp.db
 
 import android.content.Context
 import androidx.room.Room
-import com.example.mapapp.data.dao.AlertHistoryDao
-import com.example.mapapp.data.model.AlertHistory
-import com.example.mapapp.data.model.AlertType
+import com.example.mapapp.db.dao.AlertHistoryDao
+import com.example.mapapp.model.AlertHistory
+import com.example.mapapp.model.AlertType
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -30,10 +30,3 @@ object LocationRepository {
         }
     }
 }
-
-data class LocationData(
-    val latitude: Double = 0.0,
-    val longitude: Double = 0.0,
-    val speedKmh: Float = 0f,
-    val hasFix: Boolean = false
-)

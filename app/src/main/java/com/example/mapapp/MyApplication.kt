@@ -1,7 +1,7 @@
 package com.example.mapapp
 
 import android.app.Application
-import com.example.mapapp.data.LocationRepository
+import com.example.mapapp.db.LocationRepository
 import org.osmdroid.config.Configuration
 
 class MyApplication : Application() {

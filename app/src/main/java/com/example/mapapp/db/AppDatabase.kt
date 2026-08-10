@@ -1,10 +1,10 @@
-package com.example.mapapp.data
+package com.example.mapapp.db
 
 import androidx.room.Database
 import androidx.room.RoomDatabase
 import androidx.room.TypeConverters
-import com.example.mapapp.data.dao.AlertHistoryDao
-import com.example.mapapp.data.model.AlertHistory
+import com.example.mapapp.db.dao.AlertHistoryDao
+import com.example.mapapp.model.AlertHistory
 
 @Database(
     entities = [AlertHistory::class],

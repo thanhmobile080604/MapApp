@@ -1,7 +1,7 @@
-package com.example.mapapp.data
+package com.example.mapapp.db
 
 import androidx.room.TypeConverter
-import com.example.mapapp.data.model.AlertType
+import com.example.mapapp.model.AlertType
 
 class AlertTypeConverters {
     @TypeConverter

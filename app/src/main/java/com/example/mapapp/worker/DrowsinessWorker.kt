@@ -10,12 +10,11 @@ import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
 import com.example.mapapp.MainActivity
 import com.example.mapapp.R
-import com.example.mapapp.data.LocationRepository
-import com.example.mapapp.data.model.AlertType
+import com.example.mapapp.db.LocationRepository
+import com.example.mapapp.model.AlertType
 import com.example.mapapp.service.LocationForegroundService
 
 class DrowsinessWorker(appContext: Context, params: WorkerParameters) : CoroutineWorker(appContext, params) {
-
     companion object {
         const val CHANNEL_ID = "drowsiness_alert_channel"
         const val NOTIFICATION_ID = 2001

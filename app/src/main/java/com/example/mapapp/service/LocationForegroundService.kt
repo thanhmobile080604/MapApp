@@ -23,10 +23,10 @@ import android.os.RemoteException
 import androidx.core.app.NotificationCompat
 import com.example.mapapp.MainActivity
 import com.example.mapapp.R
-import com.example.mapapp.data.LocationData
-import com.example.mapapp.data.LocationRepository
-import com.example.mapapp.data.model.AlertType
-import com.example.mapapp.data.model.UserConfig
+import com.example.mapapp.db.LocationRepository
+import com.example.mapapp.model.AlertType
+import com.example.mapapp.model.LocationData
+import com.example.mapapp.model.UserConfig
 import com.google.android.gms.location.FusedLocationProviderClient
 import com.google.android.gms.location.LocationCallback
 import com.google.android.gms.location.LocationRequest

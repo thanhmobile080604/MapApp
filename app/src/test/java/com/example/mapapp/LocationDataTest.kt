@@ -1,6 +1,6 @@
 package com.example.mapapp
 
-import com.example.mapapp.data.LocationData
+import com.example.mapapp.db.LocationData
 import org.junit.Assert.assertEquals
 import org.junit.Test
 

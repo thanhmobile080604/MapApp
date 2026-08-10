@@ -2,11 +2,16 @@ package com.example.mapapp.viewmodel
 
 import android.app.Application
 import android.content.Intent
-import android.os.*
+import android.os.Build
+import android.os.Handler
+import android.os.Looper
+import android.os.Message
+import android.os.Messenger
+import android.os.RemoteException
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
-import com.example.mapapp.data.LocationData
-import com.example.mapapp.data.model.UserConfig
+import com.example.mapapp.model.LocationData
+import com.example.mapapp.model.UserConfig
 import com.example.mapapp.service.LocationForegroundService
 import com.example.mapapp.service.LocationForegroundService.Companion.KEY_DROWSY
 import com.example.mapapp.service.LocationForegroundService.Companion.KEY_FIX
@@ -35,7 +40,11 @@ import com.example.mapapp.util.LocationHelper.searchLocations
 import com.google.android.gms.location.LocationServices
 import com.google.android.gms.location.Priority
 import com.google.android.gms.tasks.CancellationTokenSource
-import kotlinx.coroutines.flow.*
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asSharedFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import org.osmdroid.util.GeoPoint
 
