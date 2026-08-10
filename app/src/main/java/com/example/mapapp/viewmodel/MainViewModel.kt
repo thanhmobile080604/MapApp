@@ -14,7 +14,6 @@ import com.google.android.gms.tasks.CancellationTokenSource
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -70,11 +69,31 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun onServiceConnected(service: LocationForegroundService) {
         this.locationService = service
         viewModelScope.launch {
-            launch { service.locationFlow.collect { _locationFlow.value = it } }
-            launch { service.isTrackingFlow.collect { _isTrackingFlow.value = it } }
-            launch { service.configFlow.collect { _configFlow.value = it } }
-            launch { service.isLocationEnabledFlow.collect { _isLocationEnabledFlow.value = it } }
-            launch { service.isSimulationActiveFlow.collect { _isSimulationActiveFlow.value = it } }
+            launch {
+                service.locationFlow.collect {
+                    _locationFlow.value = it
+                }
+            }
+            launch {
+                service.isTrackingFlow.collect {
+                    _isTrackingFlow.value = it
+                }
+            }
+            launch {
+                service.configFlow.collect {
+                    _configFlow.value = it
+                }
+            }
+            launch {
+                service.isLocationEnabledFlow.collect {
+                    _isLocationEnabledFlow.value = it
+                }
+            }
+            launch {
+                service.isSimulationActiveFlow.collect {
+                    _isSimulationActiveFlow.value = it
+                }
+            }
             launch {
                 service.speedAlertFlow.collect {
                     _speedAlertEvent.emit(it)
@@ -94,7 +113,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         } else {
             getApplication<Application>().startService(intent)
         }
-        LocationHelper.scheduleDrowsinessWorker(getApplication(), configFlow.value.drowsinessAlertEnabled)
+        LocationHelper.scheduleDrowsinessWorker(
+            getApplication(),
+            configFlow.value.drowsinessAlertEnabled
+        )
     }
 
     fun stopTracking() {
@@ -167,12 +189,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         withContext(Dispatchers.IO) {
             runCatching {
                 val encoded = URLEncoder.encode(query.trim(), "UTF-8")
-                val connection = URL("https://nominatim.openstreetmap.org/search?q=$encoded&format=json&limit=5")
-                    .openConnection() as HttpURLConnection
+                val connection =
+                    URL("https://nominatim.openstreetmap.org/search?q=$encoded&format=json&limit=5")
+                        .openConnection() as HttpURLConnection
                 connection.setRequestProperty("User-Agent", "NaviMapViewer/2.0")
                 connection.connectTimeout = 5_000
                 connection.readTimeout = 5_000
-                val results = JSONArray(connection.inputStream.bufferedReader().use { it.readText() })
+                val results =
+                    JSONArray(connection.inputStream.bufferedReader().use { it.readText() })
                 List(results.length()) { index ->
                     val item = results.getJSONObject(index)
                     OsmSearchResult(
@@ -187,16 +211,19 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private suspend fun fetchDrivingRoute(start: GeoPoint, end: GeoPoint): List<GeoPoint> =
         withContext(Dispatchers.IO) {
             runCatching {
-                val address = "https://router.project-osrm.org/route/v1/driving/${start.longitude},${start.latitude};${end.longitude},${end.latitude}?overview=full&geometries=geojson"
+                val address =
+                    "https://router.project-osrm.org/route/v1/driving/${start.longitude},${start.latitude};${end.longitude},${end.latitude}?overview=full&geometries=geojson"
                 val connection = URL(address).openConnection() as HttpURLConnection
                 connection.setRequestProperty("User-Agent", "NaviMapViewer/2.0")
                 connection.connectTimeout = 6_000
                 connection.readTimeout = 6_000
-                val coordinates = JSONObject(connection.inputStream.bufferedReader().use { it.readText() })
-                    .getJSONArray("routes").getJSONObject(0).getJSONObject("geometry")
-                    .getJSONArray("coordinates")
+                val coordinates =
+                    JSONObject(connection.inputStream.bufferedReader().use { it.readText() })
+                        .getJSONArray("routes").getJSONObject(0).getJSONObject("geometry")
+                        .getJSONArray("coordinates")
                 List(coordinates.length()) { index ->
-                    coordinates.getJSONArray(index).let { GeoPoint(it.getDouble(1), it.getDouble(0)) }
+                    coordinates.getJSONArray(index)
+                        .let { GeoPoint(it.getDouble(1), it.getDouble(0)) }
                 }
             }.getOrElse { listOf(start, end) }
         }
