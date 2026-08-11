@@ -106,6 +106,16 @@ fun MainScreen(modifier: Modifier = Modifier, viewModel: MainViewModel = viewMod
     var hasCenteredOnUser by remember { mutableStateOf(false) }
     var mapView by remember { mutableStateOf<MapView?>(null) }
 
+    // Auto-center on first location fix
+    LaunchedEffect(hasLocation, mapView) {
+        if (hasLocation && !hasCenteredOnUser && mapView != null) {
+            val userPoint = GeoPoint(location.latitude, location.longitude)
+            mapView?.controller?.setZoom(16.0)
+            mapView?.controller?.animateTo(userPoint)
+            hasCenteredOnUser = true
+        }
+    }
+
     val permissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
     ) { results ->
@@ -193,11 +203,6 @@ fun MainScreen(modifier: Modifier = Modifier, viewModel: MainViewModel = viewMod
                     update = { map ->
                         val userPoint = location.takeIf { hasLocation }?.let { GeoPoint(it.latitude, it.longitude) }
                         map.updateMarkers(userPoint, destination, route)
-                        if (userPoint != null && !hasCenteredOnUser) {
-                            map.controller.setCenter(userPoint)
-                            map.controller.setZoom(16.0)
-                            hasCenteredOnUser = true
-                        }
                     }
                 )
                 if (!isLocationEnabled) {

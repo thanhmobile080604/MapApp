@@ -71,4 +71,8 @@ dependencies {
     implementation("androidx.work:work-runtime-ktx:2.9.0")
     // OSMdroid for map
     implementation("org.osmdroid:osmdroid-android:6.1.15")
+
+    // Retrofit
+    implementation("com.squareup.retrofit2:retrofit:2.11.0")
+    implementation("com.squareup.retrofit2:converter-gson:2.11.0")
 }
