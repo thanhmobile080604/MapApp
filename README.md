@@ -20,8 +20,7 @@
 
 
 * **OSMDroid**: Open-source mapping library supporting smooth rendering and offline map storage.
-
-
+* **Retrofit**: Type-safe HTTP client for calling REST APIs in Android/Kotlin.
 
 ---
 
@@ -30,13 +29,16 @@
 The system follows a **Service-Centric MVVM** architecture, where `MainViewModel` serves as the central orchestrator coordinating data between the Service, UI, and WorkManager.
 
 ```
-[ OSMDroid / GPS ] 
-        │
-        ▼
-[ LocationForegroundService ] ◄──(Handler & Messenger)──► [ MainViewModel ]──► [ WorkManager ] (Periodic Scheduler)
-        │                                                       │
-        └──► [ Room DB ] (History Log)                          └──► [ Compose UI ] (StateFlow)
-
+[ GPS ] ──► [ LocationForegroundService ] ──► [ MainViewModel ]
+                    │                              │
+                    ▼                              ├──► [ Location API ]
+                [ Room DB ]                        │      (Address / Route)
+                                                   │
+                                                   ├──► [ WorkManager ]
+                                                   │      (Periodic Tasks)
+                                                   │
+                                                   └──► [ Compose UI ]
+                                                          (StateFlow)
 ```
 
 #### Layer Communication Mechanics
@@ -46,10 +48,11 @@ The system follows a **Service-Centric MVVM** architecture, where `MainViewModel
 * Data (Location, Speed, Settings) is packaged into `Bundle` objects and sent via `Message` instances.
 * **Bi-directional Commands**: ViewModel sends execution commands (Start/Stop service, Toggle simulation), while the Service streams live location/alert payloads back to the ViewModel.
 
-
 **ViewModel ↔ WorkManager Communication:**
 * `MainViewModel` directly communicates with and manages `WorkManager` to initialize, schedule, or cancel periodic tasks (e.g., triggering periodic safety check / anti-drowsiness sessions).
 
+**ViewModel ↔ Location API Communication:**
+* `MainViewModel` directly communicates with the `Location API` to retrieve location addresses and calculate routes from the start point to the destination.
 
 **UI Updates (Reactive Stream):**
 * `MainViewModel` converts data received from the Service into `StateFlow` / `SharedFlow` streams.
@@ -62,8 +65,9 @@ The system follows a **Service-Centric MVVM** architecture, where `MainViewModel
 1. **`LocationForegroundService`**: The core location engine. Manages GPS signal reception, calculates speed, generates simulated data (Simulation Mode), and displays system notifications.
 2. **`MainViewModel`**: The central coordinator. Acts as a Messenger Client connecting to the Service, manages `WorkManager` invocations, and maintains the UI state.
 3. **`WorkManager`**: Orchestrated by `MainViewModel` to execute periodic safety tasks independently of the UI lifecycle.
-4. **`db` (Room Database)**: Stores alert logs and speed violation records persistently.
-5. **`ui` (Jetpack Compose)**: The declarative UI layer that receives data from `MainViewModel` and responds to user events.
+4. **`Location API`**: Orchestrated by `MainViewModel` to retrieve location addresses and calculate routes between the start and destination points.
+5. **`db` (Room Database)**: Stores alert logs and speed violation records persistently.
+6. **`ui` (Jetpack Compose)**: The declarative UI layer that receives data from `MainViewModel` and responds to user events.
 
 ---
 
