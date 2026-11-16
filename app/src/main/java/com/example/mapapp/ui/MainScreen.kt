@@ -18,6 +18,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.MyLocation
@@ -79,7 +80,11 @@ private const val DESTINATION_MARKER_ID = "destination_location"
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun MainScreen(modifier: Modifier = Modifier, viewModel: MainViewModel = viewModel()) {
+fun MainScreen(
+    modifier: Modifier = Modifier,
+    viewModel: MainViewModel = viewModel(),
+    onBackClick: (() -> Unit)? = null
+) {
     val context = LocalContext.current
     val location by viewModel.locationFlow.collectAsState()
     val config by viewModel.configFlow.collectAsState()
@@ -157,7 +162,21 @@ fun MainScreen(modifier: Modifier = Modifier, viewModel: MainViewModel = viewMod
 
     Scaffold(
         modifier = modifier.fillMaxSize(),
-        topBar = { CenterAlignedTopAppBar(title = { Text("Visual-GNSS Navigation") }) },
+        topBar = {
+            CenterAlignedTopAppBar(
+                title = { Text("Visual-GNSS Navigation") },
+                navigationIcon = {
+                    if (onBackClick != null) {
+                        IconButton(onClick = onBackClick) {
+                            Icon(
+                                imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                                contentDescription = "Quay lại"
+                            )
+                        }
+                    }
+                }
+            )
+        },
         bottomBar = {
             TrackingControls(
                 isTracking = isTracking,

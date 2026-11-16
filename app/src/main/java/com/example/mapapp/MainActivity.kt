@@ -12,8 +12,8 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.Surface
 import androidx.compose.ui.Modifier
+import com.example.mapapp.navigation.AppNavigation
 import com.example.mapapp.service.LocationForegroundService
-import com.example.mapapp.ui.MainScreen
 import com.example.mapapp.ui.theme.ThemeTemplate
 import com.example.mapapp.viewmodel.MainViewModel
 
@@ -39,7 +39,7 @@ class MainActivity : AppCompatActivity() {
         setContent {
             ThemeTemplate {
                 Surface(modifier = Modifier.fillMaxSize()) {
-                    MainScreen(viewModel = viewModel)
+                    AppNavigation(viewModel = viewModel)
                 }
             }
         }
