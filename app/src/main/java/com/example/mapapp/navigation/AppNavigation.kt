@@ -8,6 +8,8 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import com.example.mapapp.ui.HomeScreen
 import com.example.mapapp.ui.MainScreen
+import com.example.mapapp.ui.ScreenAScreen
+import com.example.mapapp.ui.ScreenBScreen
 import com.example.mapapp.ui.SettingsScreen
 import com.example.mapapp.viewmodel.MainViewModel
 
@@ -50,6 +52,30 @@ fun AppNavigation(
         // Màn hình 3: Cài đặt & Thông tin (SettingsScreen)
         composable(route = Screen.Settings.route) {
             SettingsScreen(
+                onNavigateToScreenA = {
+                    navController.navigate(Screen.ScreenA.route)
+                },
+                onNavigateToScreenB = {
+                    navController.navigate(Screen.ScreenB.route)
+                },
+                onBackClick = {
+                    navController.popBackStack()
+                }
+            )
+        }
+
+        // Màn hình A
+        composable(route = Screen.ScreenA.route) {
+            ScreenAScreen(
+                onBackClick = {
+                    navController.popBackStack()
+                }
+            )
+        }
+
+        // Màn hình B
+        composable(route = Screen.ScreenB.route) {
+            ScreenBScreen(
                 onBackClick = {
                     navController.popBackStack()
                 }
